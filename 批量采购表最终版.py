@@ -77,10 +77,20 @@ def parse_address(addr):
 
 
 # ======================================================
-# 自动寻找文件
+# 获取当前目录（兼容 PyInstaller）
 # ======================================================
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if getattr(sys, 'frozen', False):
+    # EXE运行时
+    CURRENT_DIR = os.path.dirname(sys.executable)
+else:
+    # Python运行时
+    CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+# ======================================================
+# 自动寻找文件
+# ======================================================
 
 # 12
 path_12 = None
@@ -134,7 +144,7 @@ print(list(df_12.columns))
 
 
 # ======================================================
-# 打开123模板并重构列位置（精准寻找目标并插入左侧）
+# 打开123模板并重构列位置
 # ======================================================
 
 print("\n=================== 第二步：重构123模板列位置 ===================")
@@ -144,45 +154,55 @@ ws = wb.active
 
 # 1. 扫描当前所有表头
 current_headers = {}
+
 for col in range(1, ws.max_column + 1):
+
     val = ws.cell(1, col).value
+
     if val:
         current_headers[str(val).strip()] = col
 
-# 2. 寻找锚点列（优先兼容你手动改好的'收货地址（复制）'，备用寻找原'收货地址'）
-anchor_idx = current_headers.get('收货地址（复制）') 
+# 2. 寻找锚点列
+anchor_idx = current_headers.get('收货地址（复制）')
+
 if not anchor_idx:
     anchor_idx = current_headers.get('收货地址')
 
 if anchor_idx:
+
     print(f"检测到锚点列在第 {anchor_idx} 列，准备进行结构调整...")
-    
-    # 强制确保该锚点列名为“收货地址（复制）”
+
+    # 强制改名
     ws.cell(1, anchor_idx).value = '收货地址（复制）'
-    
-    # 检查左侧是否已经存在需要的解析列（防重复运行导致无限插入）
+
+    # 防止重复插入
     if '收货省份' not in current_headers:
+
         print(f"正在原列（第 {anchor_idx} 列）的正左侧自动插入 4 个解析列...")
-        
-        # 在锚点位置插入4列，原本的“收货地址（复制）”及其右侧列会自动往右平移4格，公式也会自动适应
+
         ws.insert_cols(anchor_idx, 4)
-        
-        # 给新插入的 4 列写上表头
+
         ws.cell(1, anchor_idx).value = '收货省份'
         ws.cell(1, anchor_idx + 1).value = '收货城市'
         ws.cell(1, anchor_idx + 2).value = '收货区县'
-        ws.cell(1, anchor_idx + 3).value = '收货地址' # 原“详细地址”改名为“收货地址”
-        
+        ws.cell(1, anchor_idx + 3).value = '收货地址'
+
         print("【成功】4个解析列已精确插入至左侧！")
+
     else:
         print("【提示】解析列已存在，跳过插入操作。")
-else:
-    print("【警告】未在123表中检测到 '收货地址' 或 '收货地址（复制）' 列！新列将在最右侧追加。")
 
-# 3. 重新获取最新的表头字典（因为插入列会导致原本的列号全部发生变化，必须重新映射）
+else:
+    print("【警告】未检测到收货地址列！")
+
+
+# 3. 重新获取最新表头
 headers_123 = {}
+
 for col in range(1, ws.max_column + 1):
+
     header = ws.cell(1, col).value
+
     if header:
         headers_123[str(header).strip()] = col
 
@@ -191,18 +211,21 @@ print(list(headers_123.keys()))
 
 
 # ======================================================
-# 行数校验与多余行清理
+# 行数校验与清理
 # ======================================================
 
 excel_data_rows = ws.max_row - 1
 target_data_count = len(df_12)
 
-print(f"\n[行数统计] 12表实际数据：{target_data_count} 行 | 123模板检测到：{excel_data_rows} 行")
+print(f"\n[行数统计] 12表：{target_data_count} 行 | 123模板：{excel_data_rows} 行")
 
 if excel_data_rows > target_data_count:
+
     start_delete_row = target_data_count + 2
     rows_to_delete = excel_data_rows - target_data_count
-    print(f"⚠️ [提示] 模板旧数据较多，正在自动清理末尾第 {start_delete_row} 行起的 {rows_to_delete} 行多余内容...")
+
+    print(f"⚠️ 正在清理多余旧数据...")
+
     ws.delete_rows(idx=start_delete_row, amount=rows_to_delete)
 
 
@@ -213,13 +236,12 @@ if excel_data_rows > target_data_count:
 print("\n=================== 第三步：复制字段 ===================")
 
 copy_map = {
-    # 基础信息
+
     '其它出库业务单号': '其它出库业务单号',
     '收货人': '收货人',
     '收货电话': '收货电话',
-    '收货地址': '收货地址（复制）', # 映射至改名后的列
+    '收货地址': '收货地址（复制）',
 
-    # 业务字段
     'SKU采购总⾦额（含税）': '单价',
     '采购数量（采购单位）': '数量',
     'SKU编码': 'SKU编码',
@@ -238,12 +260,15 @@ for source_col, target_col in copy_map.items():
     target_excel_col = headers_123[target_col]
 
     for i in range(target_data_count):
+
         excel_row = i + 2
+
         value = df_12.iloc[i][source_col]
 
-        # 编码类字段强制字符串
         if target_col in ['SKU编码', '其它出库业务单号', '收货电话']:
+
             value = str(value).strip()
+
             if value.endswith('.0'):
                 value = value[:-2]
 
@@ -253,7 +278,7 @@ for source_col, target_col in copy_map.items():
 
 
 # ======================================================
-# 地址解析与备注写入
+# 地址解析与备注
 # ======================================================
 
 print("\n=================== 第四步：地址解析与备注生成 ===================")
@@ -263,6 +288,7 @@ if '收货地址' in df_12.columns:
     parsed_data = []
 
     for addr in df_12['收货地址']:
+
         if str(addr).strip():
             parsed_data.append(parse_address(addr))
         else:
@@ -274,11 +300,11 @@ if '收货地址' in df_12.columns:
             '收货省份',
             '收货城市',
             '收货区县',
-            '收货地址'  
+            '收货地址'
         ]
     )
 
-    # 备注拼接
+    # 备注
     clean_addresses = (
         df_12['收货地址']
         .astype(str)
@@ -297,20 +323,27 @@ if '收货地址' in df_12.columns:
 
     parsed_df['备注'] = remark_series
 
-    # 写入数据
+    # 写入
     for field in parsed_df.columns:
-        # 如果不存在则自动新增（主要针对“备注”列）
+
         if field not in headers_123:
+
             new_col = ws.max_column + 1
+
             ws.cell(1, new_col).value = field
+
             headers_123[field] = new_col
-            print(f"【自动新增列追加至右侧】{field}")
+
+            print(f"【自动新增列】{field}")
 
         target_excel_col = headers_123[field]
 
         for i in range(target_data_count):
+
             excel_row = i + 2
+
             value = parsed_df.iloc[i][field]
+
             ws.cell(excel_row, target_excel_col).value = value
 
         print(f"【成功】写入：{field}")
@@ -325,9 +358,9 @@ print("\n=================== 第五步：保存文件 ===================")
 wb.save(output_path)
 
 print("\n【✨ 全部完成 ✨】")
-print("列结构已精准调整：4个解析列已精确插入至 '收货地址（复制）' 列的左侧")
-print("已全局替换：广西壮族自治区 -> 广西省")
-print(f"12 表的 {target_data_count} 行数据已全部完整写入！多余旧数据已清理。")
+print("4个解析列已自动插入")
+print("已完成广西壮族自治区 -> 广西省 替换")
+print(f"已写入 {target_data_count} 行数据")
 print(f"输出文件：{output_path}")
 
 input("\n按回车退出...")
