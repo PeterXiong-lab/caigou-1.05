@@ -1,0 +1,47 @@
+name: Build EXE
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      # 拉取代码
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 安装 Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 安装依赖
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          pip install pandas
+          pip install openpyxl
+
+      # 打包 EXE
+      - name: Build EXE
+        run: |
+          pyinstaller `
+            --onefile `
+            --console `
+            --clean `
+            --name 批量采购表最终版 `
+            批量采购表最终版.py
+
+      # 上传 EXE 文件
+      - name: Upload EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: 批量采购表最终版
+          path: dist/批量采购表最终版.exe
